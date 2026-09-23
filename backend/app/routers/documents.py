@@ -4,7 +4,7 @@ from app.database import get_db,SessionLocal
 from app.dependencies import get_current_user
 from app.models.user import User
 from app.models.document import Document, DocumentStatus
-from app.schemas.document import DocumentResponse, DocumentSearchResult, DocumentURLResponse
+from app.schemas.document import DocumentResponse, DocumentSearchResult, DocumentURLResponse,DocumentStatusResponse
 from app.utils.extraction import extract_text
 from app.utils.s3 import upload_file_to_s3, generate_presigned_url
 
@@ -32,7 +32,7 @@ def process_document_locally(document_id: str, s3_key: str):
         db.close()
 
 
-@router.post("/upload", response_model=DocumentResponse, status_code=201)
+@router.post("", response_model=DocumentResponse, status_code=201)
 def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
@@ -57,7 +57,7 @@ def upload_document(
     
     return new_doc
 
-@router.get("/search", response_model=list[DocumentSearchResult])
+@router.get("", response_model=list[DocumentSearchResult])
 def search_documents(
     q: str = Query(..., min_length=1),
     current_user: User = Depends(get_current_user),
@@ -73,7 +73,21 @@ def search_documents(
         DocumentSearchResult(id=doc.id, filename=doc.filename, snippet=(doc.content_text or "")[:200])
         for doc in results
     ]
+@router.get("/{document_id}/status", response_model=DocumentStatusResponse)
+def get_document_status(
+    document_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    doc = db.query(Document).filter(
+        Document.id == document_id,
+        Document.owner_id == current_user.id
+    ).first()
 
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    return DocumentStatusResponse(id=doc.id, status=doc.status)
 
 @router.get("/{document_id}/url", response_model=DocumentURLResponse)
 def get_document_url(
@@ -89,6 +103,7 @@ def get_document_url(
     if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
-    url = generate_presigned_url(doc.s3_key)
+    url = generate_presigned_url(doc.s3_key, doc.filename)
 
     return DocumentURLResponse(id=doc.id, filename=doc.filename, url=url)
+

@@ -22,3 +22,7 @@ class DocumentURLResponse(BaseModel):
     id: int
     filename: str
     url: str
+
+class DocumentStatusResponse(BaseModel):
+    id: int
+    status: str
